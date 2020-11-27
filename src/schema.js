@@ -2,6 +2,13 @@ const { gql } = require('apollo-server')
 const { Note, Upcoming } = require('./database')
 var cloudinary = require('cloudinary').v2;
 
+// Note CSV Export
+const Json2csvParser = require("json2csv").Parser;
+const fs = require("fs");
+const mongodb = require("mongodb").MongoClient;
+let url = "mongodb+srv://admin:P@ssw0rd@cluster0.zo5ak.mongodb.net/newnotes?retryWrites=true&w=majority"
+
+
 cloudinary.config({
     cloud_name: 'xxxxx',
     api_key: 'xxxxx',
@@ -9,13 +16,14 @@ cloudinary.config({
 });
 
 const typeDefs = gql
-`type Query {
+    `type Query {
     getNote(id: ID!): Note
     getNotes: [Note]
     getNoteByTitle(title: String!): [Note]
     getNoteByTags(tags: [Topics!]!): [Note]
     getNoteByDate(date: String!): [Note]
     getUpcoming: [Upcoming]
+    saveNotesTrigger: [Note]
   }
 
   enum VideoCategory {
@@ -64,6 +72,7 @@ const typeDefs = gql
       updateNote(id: ID!, title: String, date: String, url: String, content: String, video:VideoCategory, reminder:String, Image:String, tags: [Topics!]): String
   }`
 
+
 const resolvers = {
     Query: {
         getNotes: () => Note.find(),
@@ -79,15 +88,46 @@ const resolvers = {
         },
         getNoteByTags: async (_, { tags }) => {
             allNotes = await Note.find();
-            var notes = allNotes.filter((item) => {return (item.tags.indexOf(tags) >= 0); 
+            var notes = allNotes.filter((item) => {
+                return (item.tags.indexOf(tags) >= 0);
             })
-            
+
             return notes;
         },
         getNoteByDate: async (_, { date }) => {
             allNotes = await Note.find();
             var notes = allNotes.filter(b => b.date == date);
             return notes;
+        },
+        saveNotesTrigger: () => {
+            mongodb.connect(
+                url,
+                { useNewUrlParser: true, useUnifiedTopology: true },
+                (err, client) => {
+                    if (err) throw err;
+
+                    client
+                        .db("newnotes")
+                        .collection("notes")
+                        .find({})
+                        .toArray((err, data) => {
+                            if (err) throw err;
+
+                            const json2csvParser = new Json2csvParser({ header: true });
+                            const csvData = json2csvParser.parse(data);
+
+                            fs.writeFile("Notes_Export.csv", csvData, function (error) {
+                                if (error) throw error;
+                                console.log("Write to Notes_Export.csv successfully!");
+                            });
+
+                            client.close();
+                        });
+                }
+            );
+
+
+
         }
     },
 
@@ -113,41 +153,12 @@ const resolvers = {
         updateNote: async (_, { id, title, date, url, content, video, reminder, Image, tags }) => {
             await Note.findByIdAndUpdate(id, { title: title, date: date, url: url, content: content, video: video, reminder: reminder, Image: Image, tags: tags });
             return "Succesfully Updated";
-        }
+        },
+
     }
 }
-// Note CSV Export
-const Json2csvParser = require("json2csv").Parser;
-const fs = require("fs");
-const mongodb = require("mongodb").MongoClient;
 
-let url = "mongodb+srv://admin:P@ssw0rd@cluster0.zo5ak.mongodb.net/newnotes?retryWrites=true&w=majority"
 
-mongodb.connect(
-    url,
-    { useNewUrlParser: true, useUnifiedTopology: true },
-    (err, client) => {
-      if (err) throw err;
-  
-        client
-            .db("newnotes")
-            .collection("notes")
-            .find({})
-            .toArray((err, data) => {
-            if (err) throw err;
-
-            const json2csvParser = new Json2csvParser({ header: true });
-            const csvData = json2csvParser.parse(data);
-    
-            fs.writeFile("Notes_Export.csv", csvData, function(error) {
-                if (error) throw error;
-                console.log("Write to Notes_Export.csv successfully!");
-            });
-    
-            client.close();
-        });
-    }
-);
 
 
 module.exports = {
